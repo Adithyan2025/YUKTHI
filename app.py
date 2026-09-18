@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import hashlib
+from pathlib import Path
 
 try:
     import plotly.express as px
@@ -13,6 +14,7 @@ except ImportError:
     go = None
 
 from src.data_loader import load_csv
+from src.fault_hypotheses import summarize_whole_history
 from src.pipeline import analyze
 
 st.set_page_config(page_title="YUKTI | Chiller Intelligence", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
@@ -165,19 +167,30 @@ with st.sidebar:
     st.caption("Contextual chiller intelligence")
     uploaded = st.file_uploader("Upload challenge CSV", type=["csv"], help="The app maps minor column-name variations automatically.")
     use_demo = st.button("Load demo dataset", use_container_width=True)
+    bundled_dataset = Path(__file__).with_name("data_development_dataset.csv")
+    if "data_source" not in st.session_state and bundled_dataset.exists():
+        st.session_state["data_source"] = "bundled"
+        st.session_state["dataset_key"] = hashlib.sha256(bundled_dataset.read_bytes()).hexdigest()
+        st.session_state["trained_dataset_key"] = st.session_state["dataset_key"]
+        st.session_state["trained_name"] = bundled_dataset.name
     if use_demo:
         st.session_state["data_source"] = "demo"
         st.session_state["dataset_key"] = "demo-v1"
+        st.session_state.pop("trained_dataset_key", None)
     if uploaded is not None:
         st.session_state["data_source"] = "upload"
         st.session_state["uploaded_bytes"] = uploaded.getvalue()
         st.session_state["uploaded_name"] = uploaded.name
         st.session_state["dataset_key"] = hashlib.sha256(st.session_state["uploaded_bytes"]).hexdigest()
+        st.session_state.pop("trained_dataset_key", None)
     if "data_source" not in st.session_state:
         st.markdown("### Start here")
         st.info("Upload the official CSV to begin. Demo mode is clearly labelled and uses synthetic data.")
         st.stop()
-    if st.session_state["data_source"] == "demo":
+    if st.session_state["data_source"] == "bundled":
+        frame, ingest = load_csv(bundled_dataset)
+        st.success("Bundled development dataset loaded automatically.")
+    elif st.session_state["data_source"] == "demo":
         frame = demo_data()
         st.warning("DEMO DATA - NOT OFFICIAL CHALLENGE DATA")
     else:
@@ -198,8 +211,10 @@ with st.sidebar:
     except Exception as error:
         st.error(f"Analysis could not run: {error}")
         st.stop()
-    pages = ["Dashboard", "Equipment monitoring", "Anomaly explorer", "Investigation", "Data explorer", "Data quality", "Methodology", "Impact & outcomes"]
-    page = st.radio("Navigate", pages, label_visibility="collapsed")
+    pages = ["Dashboard", "Equipment monitoring", "Anomaly explorer", "Investigation", "Fault diagnosis", "Data explorer", "Data quality", "Methodology", "Impact & outcomes"]
+    if "pending_page" in st.session_state:
+        st.session_state["page_navigation"] = st.session_state.pop("pending_page")
+    page = st.radio("Navigate", pages, key="page_navigation", label_visibility="collapsed")
     st.divider()
     st.caption(f"Trained: {st.session_state.get('trained_name', 'dataset')} | {len(result['raw']):,} observations | {result['quality']['equipment_count']} equipment")
 
@@ -277,7 +292,10 @@ elif page == "Anomaly explorer":
         if not filtered.empty:
             chosen = st.selectbox("Open event", filtered.event_id.tolist())
             st.session_state["selected_event"] = chosen
-            st.caption("Use the Investigation page for the evidence view.")
+            if st.button("Investigate selected event", type="primary"):
+                st.session_state["pending_page"] = "Investigation"
+                st.rerun()
+            st.caption("Select an event, then open its evidence with the button above.")
 
 elif page == "Investigation":
     if events.empty:
@@ -304,9 +322,36 @@ elif page == "Investigation":
         with e2:
             st.write(f"Median cooling-water temperature: **{event.cooling_temp_median:.2f} C**")
             st.write(f"Historical comparable energy: **{event.historical_energy:.2f} kWh**")
+        st.markdown('<div class="section-title">Investigation hypotheses</div>', unsafe_allow_html=True)
+        st.caption("These are ranked evidence-based investigation areas, not confirmed component diagnoses.")
+        for hypothesis in event.fault_hypotheses:
+            st.markdown(f"**{hypothesis['hypothesis']}** · {hypothesis['priority']} · signal strength {hypothesis['signal_strength']:.2f}")
+            st.write(f"Evidence: {hypothesis['evidence']}")
+            st.write(f"Recommended check: {hypothesis['recommended_check']}")
         plot_event(scored, event)
         st.markdown('<div class="section-title">Recommended investigation</div>', unsafe_allow_html=True)
         st.info(event.recommendation)
+
+elif page == "Fault diagnosis":
+    st.markdown('<div class="section-title">Whole-history fault diagnosis</div>', unsafe_allow_html=True)
+    st.write("This view analyzes all detected anomaly events and ranks the systems or components that deserve inspection first. It is a diagnostic aid, not a confirmed failure classification.")
+    diagnosis = summarize_whole_history(events)
+    if diagnosis.empty:
+        st.info("No event-level diagnostic hypotheses are available for this dataset.")
+    else:
+        selected_equipment = st.selectbox("Equipment", ["All"] + quality["equipment_ids"], key="diagnosis_equipment")
+        view = diagnosis if selected_equipment == "All" else diagnosis[diagnosis["equipment_id"] == selected_equipment]
+        if view.empty:
+            st.info("No diagnosis signals are available for this equipment.")
+        else:
+            top = view.iloc[0]
+            st.success(f"Highest-priority area to inspect: {top['likely_area_to_inspect']} ({top['hypothesis']}) for {top['equipment_id']}. This is a ranked hypothesis, not a confirmed failure.")
+            st.metric("Supporting anomaly events", int(view["events"].sum()))
+            shown = view[["equipment_id", "hypothesis", "likely_area_to_inspect", "events", "weighted_strength", "evidence", "recommended_check"]].copy()
+            shown.columns = ["Equipment", "Diagnostic signal", "Likely area to inspect", "Events", "Whole-history strength", "Evidence", "Recommended check"]
+            st.dataframe(shown, use_container_width=True, hide_index=True)
+            st.markdown("#### How to interpret this")
+            st.write("A stronger whole-history signal means that the same evidence pattern appeared across more persistent or more unusual events. Operators should verify the recommended system and review the event charts before taking maintenance action.")
 
 elif page == "Data explorer":
     st.markdown('<div class="section-title">Raw and analyzed observations</div>', unsafe_allow_html=True)

@@ -6,3 +6,4 @@ venv/
 .streamlit/
 outputs/
 *.csv
+!data_development_dataset.csv
