@@ -71,6 +71,38 @@ def event_table(events: pd.DataFrame):
     st.dataframe(shown, use_container_width=True, hide_index=True)
 
 
+def input_data_profile(data: pd.DataFrame):
+    st.markdown('<div class="section-title">Input data used by the ML model</div>', unsafe_allow_html=True)
+    st.caption("These are the equipment, time, operating, and environmental signals used during analysis.")
+    columns = [
+        ("Equipment identity", "equipment_id"),
+        ("Time", "timestamp"),
+        ("Chilled-water flow (L/sec)", "flow_lps"),
+        ("Cooling-water temperature (C)", "cooling_water_temp_c"),
+        ("Building load (RT)", "building_load_rt"),
+        ("Chiller energy consumption (kWh)", "energy_kwh"),
+        ("Outside temperature (F)", "outside_temp_f"),
+        ("Dew point (F)", "dew_point_f"),
+        ("Humidity (%)", "humidity_pct"),
+        ("Wind speed (mph)", "wind_speed_mph"),
+        ("Atmospheric pressure (in)", "pressure_in"),
+    ]
+    rows = []
+    for label, column in columns:
+        values = data[column].dropna() if column in data else pd.Series(dtype="object")
+        if column == "equipment_id":
+            summary = ", ".join(values.astype(str).unique()[:8]) if not values.empty else "No values"
+            latest = str(values.iloc[-1]) if not values.empty else "-"
+        elif column == "timestamp":
+            summary = f"{values.min():%Y-%m-%d %H:%M} to {values.max():%Y-%m-%d %H:%M}" if not values.empty else "No values"
+            latest = f"{values.max():%Y-%m-%d %H:%M}" if not values.empty else "-"
+        else:
+            summary = f"min {values.min():.2f} | median {values.median():.2f} | max {values.max():.2f}" if not values.empty else "No values"
+            latest = f"{values.iloc[-1]:.2f}" if not values.empty else "-"
+        rows.append({"Input signal": label, "Dataset summary": summary, "Latest value": latest, "Missing": int(data[column].isna().sum()) if column in data else 0})
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+
 def plot_event(data: pd.DataFrame, event: pd.Series):
     subset = data[(data["equipment_id"] == event.equipment_id) & (data["timestamp"].between(event.start - pd.Timedelta(hours=12), event.end + pd.Timedelta(hours=12)))].copy()
     subset["flag"] = np.where(subset["event_id"].eq(event.event_id), "Flagged event", "Context")
@@ -143,6 +175,7 @@ if page == "Dashboard":
     cols[1].metric("Observations", f"{quality['rows']:,}")
     cols[2].metric("Anomaly events", len(events))
     cols[3].metric("High-priority events", high_count)
+    input_data_profile(result["raw"])
     st.markdown('<div class="section-title">Equipment status</div>', unsafe_allow_html=True)
     rows = []
     for equipment in quality["equipment_ids"]:
