@@ -18,6 +18,7 @@ from src.fault_hypotheses import summarize_whole_history
 from src.pipeline import analyze
 
 st.set_page_config(page_title="YUKTI | Chiller Intelligence", page_icon="◈", layout="wide", initial_sidebar_state="expanded")
+ANALYSIS_CACHE_VERSION = "2026-09-19-hypothesis-diagnosis-v2"
 
 st.markdown("""
 <style>
@@ -66,7 +67,7 @@ def demo_data() -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner="Training the contextual anomaly model on your CSV...")
-def run_analysis(frame: pd.DataFrame) -> dict:
+def run_analysis(frame: pd.DataFrame, cache_version: str) -> dict:
     return analyze(frame)
 
 
@@ -176,7 +177,7 @@ with st.sidebar:
     frame, ingest = load_csv(bundled_dataset)
     st.success("Development dataset loaded and model trained automatically.")
     try:
-        result = run_analysis(frame)
+        result = run_analysis(frame, ANALYSIS_CACHE_VERSION)
     except Exception as error:
         st.error(f"Analysis could not run: {error}")
         st.stop()
