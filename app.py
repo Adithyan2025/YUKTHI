@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 import hashlib
+
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+except ImportError:
+    px = None
+    go = None
 
 from src.data_loader import load_csv
 from src.pipeline import analyze
@@ -64,9 +69,20 @@ def run_analysis(frame: pd.DataFrame) -> dict:
 
 
 def chart_line(data, y, title, color="equipment_id", markers=False):
+    if px is None:
+        st.caption(f"Interactive Plotly chart unavailable in this deployment: {title}")
+        fallback = data.pivot_table(index="timestamp", columns=color, values=y, aggfunc="mean") if color in data.columns else data.set_index("timestamp")[[y]]
+        st.line_chart(fallback)
+        return None
     fig = px.line(data, x="timestamp", y=y, color=color, markers=markers, title=title, template="plotly_white")
     fig.update_layout(height=350, margin=dict(l=10, r=10, t=45, b=10), legend_title_text="")
     return fig
+
+
+def render_line(data, y, title, color="equipment_id", markers=False):
+    figure = chart_line(data, y, title, color, markers)
+    if figure is not None:
+        st.plotly_chart(figure, use_container_width=True)
 
 
 def score_class(value: str) -> str:
@@ -121,6 +137,12 @@ def plot_event(data: pd.DataFrame, event: pd.Series):
     subset = data[(data["equipment_id"] == event.equipment_id) & (data["timestamp"].between(event.start - pd.Timedelta(hours=12), event.end + pd.Timedelta(hours=12)))].copy()
     event_mask = subset["event_id"].eq(event.event_id).fillna(False)
     subset["flag"] = np.where(event_mask, "Flagged event", "Context")
+    if go is None:
+        st.caption("Interactive Plotly chart unavailable in this deployment; showing a basic event trend.")
+        st.line_chart(subset.set_index("timestamp")[["energy_kwh"]])
+        chart_line(subset, "anomaly_score", "Model anomaly score")
+        chart_line(subset, "building_load_rt", "Building load context")
+        return
     fig = go.Figure()
     for flag, color in [("Context", "#9aa8a8"), ("Flagged event", "#b43c3c")]:
         part = subset[subset["flag"] == flag]
@@ -129,9 +151,13 @@ def plot_event(data: pd.DataFrame, event: pd.Series):
     st.plotly_chart(fig, use_container_width=True)
     left, right = st.columns(2)
     with left:
-        st.plotly_chart(chart_line(subset, "anomaly_score", "Model anomaly score"), use_container_width=True)
+            score_chart = chart_line(subset, "anomaly_score", "Model anomaly score")
+            if score_chart is not None:
+                st.plotly_chart(score_chart, use_container_width=True)
     with right:
-        st.plotly_chart(chart_line(subset, "building_load_rt", "Building load context"), use_container_width=True)
+            load_chart = chart_line(subset, "building_load_rt", "Building load context")
+            if load_chart is not None:
+                st.plotly_chart(load_chart, use_container_width=True)
 
 
 with st.sidebar:
@@ -211,9 +237,9 @@ if page == "Dashboard":
     event_table(events.sort_values("start", ascending=False).head(8))
     left, right = st.columns(2)
     with left:
-        st.plotly_chart(chart_line(scored, "energy_kwh", "Energy consumption by equipment"), use_container_width=True)
+        render_line(scored, "energy_kwh", "Energy consumption by equipment")
     with right:
-        st.plotly_chart(chart_line(scored, "anomaly_score", "Model anomaly score"), use_container_width=True)
+        render_line(scored, "anomaly_score", "Model anomaly score")
 
 elif page == "Equipment monitoring":
     equipment_options = ["All"] + quality["equipment_ids"]
@@ -229,10 +255,10 @@ elif page == "Equipment monitoring":
         c2.metric("Latest load", f"{latest.building_load_rt:.2f} RT")
         c3.metric("Latest score", f"{latest.anomaly_score:.2f}")
         c4.metric("Current status", status)
-        st.plotly_chart(chart_line(view, "energy_kwh", "Energy trend"), use_container_width=True)
-        st.plotly_chart(chart_line(view, "building_load_rt", "Building load trend"), use_container_width=True)
-        st.plotly_chart(chart_line(view, "anomaly_score", "Anomaly score trend", markers=True), use_container_width=True)
-        st.plotly_chart(chart_line(view, "cooling_water_temp_c", "Cooling-water temperature"), use_container_width=True)
+        render_line(view, "energy_kwh", "Energy trend")
+        render_line(view, "building_load_rt", "Building load trend")
+        render_line(view, "anomaly_score", "Anomaly score trend", markers=True)
+        render_line(view, "cooling_water_temp_c", "Cooling-water temperature")
 
 elif page == "Anomaly explorer":
     st.markdown('<div class="section-title">Anomaly event explorer</div>', unsafe_allow_html=True)
