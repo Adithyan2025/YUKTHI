@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import hashlib
 
 from src.data_loader import load_csv
 from src.pipeline import analyze
@@ -43,6 +44,7 @@ def demo_data() -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+@st.cache_data(show_spinner="Training the contextual anomaly model on your CSV...")
 def run_analysis(frame: pd.DataFrame) -> dict:
     return analyze(frame)
 
@@ -92,10 +94,12 @@ with st.sidebar:
     use_demo = st.button("Load demo dataset", use_container_width=True)
     if use_demo:
         st.session_state["data_source"] = "demo"
+        st.session_state["dataset_key"] = "demo-v1"
     if uploaded is not None:
         st.session_state["data_source"] = "upload"
         st.session_state["uploaded_bytes"] = uploaded.getvalue()
         st.session_state["uploaded_name"] = uploaded.name
+        st.session_state["dataset_key"] = hashlib.sha256(st.session_state["uploaded_bytes"]).hexdigest()
     if "data_source" not in st.session_state:
         st.markdown("### Start here")
         st.info("Upload the official CSV to begin. Demo mode is clearly labelled and uses synthetic data.")
@@ -107,6 +111,15 @@ with st.sidebar:
         from io import BytesIO
         frame, ingest = load_csv(BytesIO(st.session_state["uploaded_bytes"]))
         st.caption(f"Loaded: {st.session_state.get('uploaded_name', 'uploaded.csv')}")
+    st.markdown("### Model training")
+    st.caption("The model is trained from the currently selected dataset. No precomputed anomaly results are used.")
+    train_clicked = st.button("Train model on this CSV", type="primary", use_container_width=True)
+    if train_clicked:
+        st.session_state["trained_dataset_key"] = st.session_state["dataset_key"]
+        st.session_state["trained_name"] = st.session_state.get("uploaded_name", "demo.csv")
+    if st.session_state.get("trained_dataset_key") != st.session_state["dataset_key"]:
+        st.info("Upload a CSV and click 'Train model on this CSV' to begin.")
+        st.stop()
     try:
         result = run_analysis(frame)
     except Exception as error:
@@ -115,13 +128,13 @@ with st.sidebar:
     pages = ["Dashboard", "Equipment monitoring", "Anomaly explorer", "Investigation", "Data explorer", "Data quality", "Methodology"]
     page = st.radio("Navigate", pages, label_visibility="collapsed")
     st.divider()
-    st.caption(f"{len(result['raw']):,} observations | {result['quality']['equipment_count']} equipment")
+    st.caption(f"Trained: {st.session_state.get('trained_name', 'dataset')} | {len(result['raw']):,} observations | {result['quality']['equipment_count']} equipment")
 
 quality = result["quality"]
 scored = result["scored"]
 events = result["events"]
 
-st.markdown('<div class="hero"><h1>Chiller intelligence</h1><p>Context-aware monitoring for unusual equipment behaviour. Scores support investigation; they are not physical diagnoses.</p></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="hero"><h1>Chiller intelligence</h1><p>Model trained on <strong>{st.session_state.get("trained_name", "the selected CSV")}</strong>. Context-aware monitoring for unusual equipment behaviour. Scores support investigation; they are not physical diagnoses.</p></div>', unsafe_allow_html=True)
 
 if page == "Dashboard":
     high_count = int((events["severity"] == "HIGH").sum()) if not events.empty else 0
