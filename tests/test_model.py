@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import xgboost
 from src.pipeline import analyze
+from src.fault_hypotheses import summarize_whole_history
 
 
 def test_pipeline_returns_scores_and_events():
@@ -14,3 +15,6 @@ def test_pipeline_returns_scores_and_events():
     assert result["model"]["model"] == "Isolation Forest"
     assert result["model"]["energy_baseline"]["model"] == "XGBoost Regressor"
     assert result["model"]["energy_baseline"]["status"] == "trained"
+    diagnosis = summarize_whole_history(result["events"])
+    assert not diagnosis.empty
+    assert "likely_area_to_inspect" in diagnosis.columns

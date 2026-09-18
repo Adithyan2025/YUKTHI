@@ -1,6 +1,7 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
+from .fault_hypotheses import rank_hypotheses
 
 
 def _severity(score: float, persistence: int, quality_ok: bool) -> str:
@@ -55,7 +56,8 @@ def build_events(scored: pd.DataFrame, quality: dict) -> tuple[pd.DataFrame, pd.
                 recommendation = "Investigate the energy-to-load relationship and review operating conditions during the flagged period."
             if quality.get("missing_pct", 0) >= 10:
                 recommendation += " Review sensor/data quality before interpreting the result as equipment behaviour."
-            event_rows.append({"event_id": event_id, "equipment_id": equipment, "start": start, "end": end, "duration_hours": duration, "observations": persistence, "max_score": score, "average_score": float(subset["anomaly_score"].mean()), "severity": severity, "observed_energy": observed, "historical_energy": typical, "difference_pct": difference_pct, "load_median": load, "cooling_temp_median": temp, "context": context, "explanation": explanation, "recommendation": recommendation})
+            hypotheses = rank_hypotheses(subset, baseline, quality.get("missing_pct", 0))
+            event_rows.append({"event_id": event_id, "equipment_id": equipment, "start": start, "end": end, "duration_hours": duration, "observations": persistence, "max_score": score, "average_score": float(subset["anomaly_score"].mean()), "severity": severity, "observed_energy": observed, "historical_energy": typical, "difference_pct": difference_pct, "load_median": load, "cooling_temp_median": temp, "context": context, "explanation": explanation, "recommendation": recommendation, "fault_hypotheses": hypotheses})
             event_number += 1
     events = pd.DataFrame(event_rows)
     return data, events
