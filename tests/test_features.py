@@ -8,3 +8,5 @@ def test_features_preserve_real_gap_and_impute_small_gap():
     assert features.loc[1, "flow_lps"] == 2
     assert report["imputed"]["flow_lps"] == 1
     assert features.loc[1, "gap_minutes"] == 30
+    assert features.loc[1, "energy_interval_hours"] == 0.5
+    assert features.loc[1, "energy_kw"] == 42

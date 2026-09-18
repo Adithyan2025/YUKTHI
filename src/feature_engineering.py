@@ -18,6 +18,7 @@ def build_features(frame: pd.DataFrame, interpolation_limit: int = 2) -> tuple[p
     data["dew_point_c"] = (data["dew_point_f"] - 32) * 5 / 9
     data["outside_to_cooling_temp_delta_c"] = data["outside_temp_c"] - data["cooling_water_temp_c"]
     data["gap_minutes"] = data.groupby("equipment_id")["timestamp"].diff().dt.total_seconds().div(60)
+    data["energy_interval_hours"] = data["gap_minutes"].div(60).where(data["gap_minutes"].gt(0))
     group = data.groupby("equipment_id", group_keys=False)
     for lag in [1, 2, 6, 12, 48]:
         data[f"energy_lag_{lag}"] = group["energy_kwh"].shift(lag)
@@ -32,7 +33,7 @@ def build_features(frame: pd.DataFrame, interpolation_limit: int = 2) -> tuple[p
     data["energy_per_load"] = data["energy_kwh"] / data["building_load_rt"].replace(0, np.nan)
     data["energy_per_flow"] = data["energy_kwh"] / data["flow_lps"].replace(0, np.nan)
     data["load_per_flow"] = data["building_load_rt"] / data["flow_lps"].replace(0, np.nan)
-    data["energy_kw"] = data["energy_kwh"] * 2
+    data["energy_kw"] = data["energy_kwh"] / data["energy_interval_hours"].replace(0, np.nan)
     data["estimated_cop"] = (data["building_load_rt"] * 3.517) / data["energy_kw"].replace(0, np.nan)
     data["cop_rolling_2h"] = np.nan
     for _, equipment_data in data.groupby("equipment_id", sort=False):
