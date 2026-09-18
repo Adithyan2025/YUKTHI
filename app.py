@@ -17,11 +17,25 @@ st.markdown("""
 :root { --ink:#17242b; --muted:#6c7b80; --line:#dbe4e5; --mint:#0f766e; --orange:#c7672d; --red:#b43c3c; }
 html, body, [class*="css"] { font-family: "Trebuchet MS", "Segoe UI", sans-serif; color: var(--ink); }
 [data-testid="stSidebar"] { background: #f1f5f3; border-right: 1px solid var(--line); }
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span { color: #17242b !important; }
+[data-testid="stSidebar"] [role="radiogroup"] label { color: #17242b !important; font-weight: 600; }
+[data-testid="stSidebar"] [role="radiogroup"] label p { color: #17242b !important; }
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) { background: #d7ebe5; border-radius: 4px; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] { background: #ffffff !important; border: 1px solid #a9bbbd; border-radius: 8px; padding: .5rem; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] section { background: #ffffff !important; border: 0 !important; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button { background: #e6efed !important; color: #17242b !important; border: 1px solid #8da5a5 !important; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] small,
+[data-testid="stSidebar"] [data-testid="stFileUploader"] span { color: #17242b !important; }
+[data-testid="stSidebar"] .stButton > button { background: #0f766e !important; color: #ffffff !important; border: 1px solid #0b5e58 !important; font-weight: 700; }
 [data-testid="stMetricValue"] { font-family: Georgia, serif; letter-spacing: 0; }
 .block-container { padding-top: 2rem; max-width: 1500px; }
 .hero { padding: 1.3rem 1.5rem; border: 1px solid var(--line); border-left: 5px solid var(--mint); background: linear-gradient(110deg,#f8fbf8,#edf6f3); margin-bottom: 1.2rem; }
-.hero h1 { font-family: Georgia, serif; font-weight: 500; margin: 0; font-size: 2.3rem; }
-.hero p { color: var(--muted); margin: .35rem 0 0; }
+.hero h1 { color: #17242b !important; font-family: Georgia, serif; font-weight: 500; margin: 0; font-size: 2.3rem; }
+.hero p { color: #526a70 !important; margin: .35rem 0 0; }
 .status { display:inline-block; padding:.22rem .55rem; border-radius: 3px; font-size:.72rem; font-weight:700; letter-spacing:.06em; }
 .normal { color:#12634d; background:#dff3e9; } .attention { color:#95501c; background:#fff0d7; } .high { color:#9e2e2e; background:#fde1df; }
 .section-title { font-family: Georgia, serif; font-size: 1.35rem; margin: 1.2rem 0 .5rem; }
@@ -105,7 +119,8 @@ def input_data_profile(data: pd.DataFrame):
 
 def plot_event(data: pd.DataFrame, event: pd.Series):
     subset = data[(data["equipment_id"] == event.equipment_id) & (data["timestamp"].between(event.start - pd.Timedelta(hours=12), event.end + pd.Timedelta(hours=12)))].copy()
-    subset["flag"] = np.where(subset["event_id"].eq(event.event_id), "Flagged event", "Context")
+    event_mask = subset["event_id"].eq(event.event_id).fillna(False)
+    subset["flag"] = np.where(event_mask, "Flagged event", "Context")
     fig = go.Figure()
     for flag, color in [("Context", "#9aa8a8"), ("Flagged event", "#b43c3c")]:
         part = subset[subset["flag"] == flag]
@@ -176,6 +191,15 @@ if page == "Dashboard":
     cols[2].metric("Anomaly events", len(events))
     cols[3].metric("High-priority events", high_count)
     input_data_profile(result["raw"])
+    latest = scored.sort_values("timestamp").iloc[-1]
+    st.markdown('<div class="section-title">Hybrid ML output</div>', unsafe_allow_html=True)
+    output_cols = st.columns(5)
+    output_cols[0].metric("Observed energy", f"{latest.energy_kwh:.2f} kWh")
+    output_cols[1].metric("Expected energy", f"{latest.expected_energy_kwh:.2f} kWh" if pd.notna(latest.expected_energy_kwh) else "-")
+    output_cols[2].metric("Energy residual", f"{latest.energy_residual_kwh:+.2f} kWh" if pd.notna(latest.energy_residual_kwh) else "-")
+    output_cols[3].metric("Rolling COP", f"{latest.cop_rolling_2h:.2f}" if pd.notna(latest.cop_rolling_2h) else "-")
+    output_cols[4].metric("ML anomaly score", f"{latest.anomaly_score:.2f}")
+    st.caption("XGBoost estimates expected energy, Isolation Forest scores multivariate abnormality, and COP < 4.5 is an application-defined efficiency alert for the rolling two-hour window.")
     st.markdown('<div class="section-title">Equipment status</div>', unsafe_allow_html=True)
     rows = []
     for equipment in quality["equipment_ids"]:
@@ -290,17 +314,25 @@ elif page == "Methodology":
     steps = [
         ("1. Ingestion", "Column aliases are mapped, timestamps are parsed, equipment is identified, and rows are sorted."),
         ("2. Feature engineering", "Time-of-day, lags, observation-window rolling statistics, changes, ratios, and actual timestamp gaps are derived."),
-        ("3. Contextual model", "Isolation Forest sees energy together with load, flow, temperatures, weather, and relationship features."),
-        ("4. Chronology", "The unsupervised baseline is fitted without a random train/test split; no labelled performance claims are invented."),
-        ("5. Scoring", "The inverted model decision function is normalized to the application-defined 0-1 Model Anomaly Score."),
+        ("3. Energy baseline", "XGBoost predicts expected energy from load, flow, temperatures, weather, time, and rolling operating context."),
+        ("4. Contextual anomaly model", "Isolation Forest detects unusual combinations of energy, load, flow, temperatures, weather, and relationship features."),
+        ("5. Chronology and scoring", "XGBoost uses an 80/20 chronological evaluation split. Isolation Forest output is normalized to the application-defined 0-1 Model Anomaly Score."),
         ("6. Persistence", "Near-consecutive flagged observations are grouped using actual time differences into anomaly events."),
         ("7. Explanation", "Events compare the same equipment with approximate historical load and cooling-water conditions."),
         ("8. Recommendation", "Outputs suggest evidence-linked investigation steps and avoid unsupported component diagnoses."),
     ]
     for title, text in steps:
-        st.markdown(f"**{title}**  \\n{text}")
+        st.markdown(f"**{title}**")
+        st.write(text)
     st.markdown("#### Current model run")
     st.json(result["model"])
+    baseline_model = result["model"]["energy_baseline"]
+    if baseline_model.get("model") == "XGBoost Regressor" and baseline_model.get("status") == "trained":
+        st.success(f"XGBoost Regressor is active. Chronological evaluation RMSE: {baseline_model.get('evaluation_rmse_kwh', 0):.2f} kWh.")
+    else:
+        st.warning(f"Energy baseline status: {baseline_model.get('model', 'Unavailable')}.")
+    st.markdown("#### Hybrid model roles")
+    st.write("XGBoost predicts expected energy under the current operating context. Isolation Forest detects unusual combinations of measurements. The COP rule adds an efficiency alert when the rolling two-hour COP is below 4.5.")
     st.markdown("#### Limitations")
     st.write("Without labelled failures, the model cannot establish fault truth. Sensor quality, unusual but legitimate operating modes, and sparse equipment histories can affect results. Treat HIGH and ATTENTION as review priorities, not maintenance conclusions.")
 

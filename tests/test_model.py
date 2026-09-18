@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import xgboost
 from src.pipeline import analyze
 
 
@@ -11,3 +12,5 @@ def test_pipeline_returns_scores_and_events():
     assert "anomaly_score" in result["scored"]
     assert result["scored"]["anomaly_score"].between(0, 1).all()
     assert result["model"]["model"] == "Isolation Forest"
+    assert result["model"]["energy_baseline"]["model"] == "XGBoost Regressor"
+    assert result["model"]["energy_baseline"]["status"] == "trained"

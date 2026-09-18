@@ -27,5 +27,7 @@ def run_anomaly_detection(features: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     data["raw_anomaly_score"] = raw
     data["anomaly_score"] = ((data["raw_anomaly_score"] - low) / (high - low if high > low else 1)).clip(0, 1).fillna(0)
     cutoff = float(data.loc[valid_mask, "anomaly_score"].quantile(0.95)) if valid_mask.any() else 1.0
-    data["is_anomaly"] = data["anomaly_score"].ge(max(0.55, cutoff))
+    data["isolation_forest_anomaly"] = data["anomaly_score"].ge(max(0.55, cutoff))
+    data["is_anomaly"] = data["isolation_forest_anomaly"] | data.get("cop_alert", False)
+    data["anomaly_score"] = data[["anomaly_score", "baseline_deviation_score"]].max(axis=1) if "baseline_deviation_score" in data else data["anomaly_score"]
     return data, {"model": "Isolation Forest", "features": columns, "status": "trained", "reference_rows": int(valid_mask.sum()), "score_cutoff": max(0.55, cutoff), "validation": "chronological reference features; no random split or labelled accuracy claimed"}
