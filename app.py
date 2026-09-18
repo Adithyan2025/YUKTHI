@@ -165,47 +165,16 @@ def plot_event(data: pd.DataFrame, event: pd.Series):
 with st.sidebar:
     st.markdown("## YUKTI / 2026")
     st.caption("Contextual chiller intelligence")
-    uploaded = st.file_uploader("Upload challenge CSV", type=["csv"], help="The app maps minor column-name variations automatically.")
-    use_demo = st.button("Load demo dataset", use_container_width=True)
     bundled_dataset = Path(__file__).with_name("data_development_dataset.csv")
-    if "data_source" not in st.session_state and bundled_dataset.exists():
-        st.session_state["data_source"] = "bundled"
-        st.session_state["dataset_key"] = hashlib.sha256(bundled_dataset.read_bytes()).hexdigest()
-        st.session_state["trained_dataset_key"] = st.session_state["dataset_key"]
-        st.session_state["trained_name"] = bundled_dataset.name
-    if use_demo:
-        st.session_state["data_source"] = "demo"
-        st.session_state["dataset_key"] = "demo-v1"
-        st.session_state.pop("trained_dataset_key", None)
-    if uploaded is not None:
-        st.session_state["data_source"] = "upload"
-        st.session_state["uploaded_bytes"] = uploaded.getvalue()
-        st.session_state["uploaded_name"] = uploaded.name
-        st.session_state["dataset_key"] = hashlib.sha256(st.session_state["uploaded_bytes"]).hexdigest()
-        st.session_state.pop("trained_dataset_key", None)
-    if "data_source" not in st.session_state:
-        st.markdown("### Start here")
-        st.info("Upload the official CSV to begin. Demo mode is clearly labelled and uses synthetic data.")
+    if not bundled_dataset.exists():
+        st.error("Bundled development dataset is missing from this deployment.")
         st.stop()
-    if st.session_state["data_source"] == "bundled":
-        frame, ingest = load_csv(bundled_dataset)
-        st.success("Bundled development dataset loaded automatically.")
-    elif st.session_state["data_source"] == "demo":
-        frame = demo_data()
-        st.warning("DEMO DATA - NOT OFFICIAL CHALLENGE DATA")
-    else:
-        from io import BytesIO
-        frame, ingest = load_csv(BytesIO(st.session_state["uploaded_bytes"]))
-        st.caption(f"Loaded: {st.session_state.get('uploaded_name', 'uploaded.csv')}")
-    st.markdown("### Model training")
-    st.caption("The model is trained from the currently selected dataset. No precomputed anomaly results are used.")
-    train_clicked = st.button("Train model on this CSV", type="primary", use_container_width=True)
-    if train_clicked:
-        st.session_state["trained_dataset_key"] = st.session_state["dataset_key"]
-        st.session_state["trained_name"] = st.session_state.get("uploaded_name", "demo.csv")
-    if st.session_state.get("trained_dataset_key") != st.session_state["dataset_key"]:
-        st.info("Upload a CSV and click 'Train model on this CSV' to begin.")
-        st.stop()
+    st.session_state["data_source"] = "bundled"
+    st.session_state["dataset_key"] = hashlib.sha256(bundled_dataset.read_bytes()).hexdigest()
+    st.session_state["trained_dataset_key"] = st.session_state["dataset_key"]
+    st.session_state["trained_name"] = bundled_dataset.name
+    frame, ingest = load_csv(bundled_dataset)
+    st.success("Development dataset loaded and model trained automatically.")
     try:
         result = run_analysis(frame)
     except Exception as error:
