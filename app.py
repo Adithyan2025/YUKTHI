@@ -125,7 +125,7 @@ with st.sidebar:
     except Exception as error:
         st.error(f"Analysis could not run: {error}")
         st.stop()
-    pages = ["Dashboard", "Equipment monitoring", "Anomaly explorer", "Investigation", "Data explorer", "Data quality", "Methodology"]
+    pages = ["Dashboard", "Equipment monitoring", "Anomaly explorer", "Investigation", "Data explorer", "Data quality", "Methodology", "Impact & outcomes"]
     page = st.radio("Navigate", pages, label_visibility="collapsed")
     st.divider()
     st.caption(f"Trained: {st.session_state.get('trained_name', 'dataset')} | {len(result['raw']):,} observations | {result['quality']['equipment_count']} equipment")
@@ -251,7 +251,7 @@ elif page == "Data quality":
     st.json(result["preprocessing"])
     st.info("Small isolated numeric gaps are interpolated within equipment. Longer gaps remain missing. Timestamp gaps are data-quality issues, not automatic equipment faults.")
 
-else:
+elif page == "Methodology":
     st.markdown('<div class="section-title">Methodology</div>', unsafe_allow_html=True)
     st.write("The application learns unusual multivariate behaviour rather than applying fixed energy thresholds.")
     steps = [
@@ -270,3 +270,19 @@ else:
     st.json(result["model"])
     st.markdown("#### Limitations")
     st.write("Without labelled failures, the model cannot establish fault truth. Sensor quality, unusual but legitimate operating modes, and sparse equipment histories can affect results. Treat HIGH and ATTENTION as review priorities, not maintenance conclusions.")
+
+else:
+    st.markdown('<div class="section-title">Expected operational impact</div>', unsafe_allow_html=True)
+    st.write("The application turns historical chiller measurements into prioritized, evidence-backed investigation signals. It supports decisions without claiming that a specific component has failed.")
+    impact_items = [
+        ("Earlier identification", "Persistent unusual behaviour is grouped into events so operators can see emerging periods that warrant review."),
+        ("Energy performance visibility", "Energy is interpreted alongside building load, flow, temperature, weather, and historical behaviour."),
+        ("Issue prioritization", "Application-defined NORMAL, ATTENTION, and HIGH severities help teams focus on the strongest signals first."),
+        ("Health and degradation monitoring", "Equipment is compared primarily with its own historical behaviour under comparable operating conditions."),
+        ("Reduced unnecessary consumption", "Energy-to-load deviations can prompt investigation of operating conditions before excess use persists."),
+        ("Evidence-backed operations", "Every event includes score, persistence, context, historical comparison, charts, and a recommended investigation."),
+    ]
+    for title, description in impact_items:
+        st.markdown(f"### {title}")
+        st.write(description)
+    st.info("These are potential applications of the analytical signals. Actual value depends on data quality, sensor reliability, operational context, and human investigation.")
